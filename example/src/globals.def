@@ -1,0 +1,5 @@
+{list,{options,
+	[{tuple,[{value,module},{builtin,is_atom},term]},
+	{tuple,[{value,client},{builtin,is_atom},term]},
+	{tuple,[{value,tcp_port},{builtin,is_integer},
+		{tuple,[{builtin,is_atom},{builtin,is_atom}]}]}]}}.
