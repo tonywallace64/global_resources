@@ -12,12 +12,16 @@
 
 %% API
 -export([start_link/0]).
--export([lookup/0,lookup/1]).
+-export([lookup/0,lookup/1,interval_timer/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
 -define(SERVER, ?MODULE).
+-define(CONFIG_CHECK_INTERVAL,10000).
+-define(CONFIG_FILE,"globals.config.etf").
+-define(CONFIG_FILE_NEW,"globals.config.etf.new").
+
 
 %-record(state, {}).
 
@@ -57,8 +61,8 @@ lookup() ->
 %% @end
 %%--------------------------------------------------------------------
 init([]) ->
-    {ok,BinTerms} = file:read_file("globals.config.etf"),
-    [State] = binary_to_term(BinTerms),
+    State = read_config(?CONFIG_FILE),
+    start_interval_timer(),
     {ok, State}.
 
 %%--------------------------------------------------------------------
@@ -112,8 +116,12 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_info(check_for_new_config,State) ->
+    NewState = maybe_new_config(file:read_file(?CONFIG_FILE_NEW),State),
+    {noreply, NewState};
 handle_info(_Info, State) ->
     {noreply, State}.
+
 
 %%--------------------------------------------------------------------
 %% @private
@@ -158,4 +166,40 @@ lookup(Test,Acc,[_|T]) ->
 lookup(_,Acc,[]) ->
     Acc.
 
+%% for this server it is acceptable that
+%% configuration file does not exist.
+%% It can be deployed at any time, including
+%% after the server has been started.
+read_config(File) ->
+    maybe_read(file:read_file(File)).
 
+maybe_read({ok,BinTerms}) ->
+    [State] = binary_to_term(BinTerms),
+    State;
+maybe_read({error,enoent}) ->
+    [].
+
+start_interval_timer() ->
+    spawn_link(?MODULE,interval_timer,[self()]).
+
+interval_timer(GenServerPid) ->
+    receive
+	_ ->
+	    ok
+    after ?CONFIG_CHECK_INTERVAL ->
+	    GenServerPid ! check_for_new_config
+    end,
+    interval_timer(GenServerPid).
+
+
+maybe_new_config(X,State) ->
+    maybe_new_state(maybe_read(X),State).
+
+maybe_new_state([],State) ->
+    State;
+maybe_new_state(NewState,_) ->
+    %% move new configuration to existing
+    %% then return NewState
+    ok=file:delete(?CONFIG_FILE),
+    ok=file:rename(?CONFIG_FILE_NEW,?CONFIG_FILE),
+    NewState.
